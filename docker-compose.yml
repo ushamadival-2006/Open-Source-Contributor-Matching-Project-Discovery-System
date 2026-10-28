@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: oss_match
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/integrated_schema.sql:/docker-entrypoint-initdb.d/01-integrated-schema.sql:ro
+      - ./database/integrated_seed.sql:/docker-entrypoint-initdb.d/02-integrated-seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d oss_match"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  qdrant:
+    image: qdrant/qdrant:v1.13.2
+    ports: ["6333:6333"]
+    volumes: [qdrant:/qdrant/storage]
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/oss_match
+      QDRANT_URL: http://qdrant:6333
+      SESSION_SECRET: ${SESSION_SECRET:-local-development-secret-change-me-please-123456}
+      FRONTEND_ORIGINS: http://localhost:3000
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      qdrant: { condition: service_started }
+  web:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/oss_match
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: projects
+      SESSION_SECRET: ${SESSION_SECRET:-local-development-secret-change-me-please-123456}
+      NEXT_PUBLIC_PROJECT_API_URL: http://localhost:8000
+    ports: ["3000:3000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      qdrant: { condition: service_started }
+      backend: { condition: service_started }
+volumes:
+  pgdata: {}
+  qdrant: {}
